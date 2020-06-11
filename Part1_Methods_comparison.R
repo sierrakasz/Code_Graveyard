@@ -1,5 +1,6 @@
-rm(list=ls())
-getwd()
+# Part 1 AKP - Methods comparison
+
+load("C:/Users/sierr/Documents/ThesisProject_AKP/R Scripts/AKP_session.RData")
 setwd("C:/Users/sierr/Documents/ThesisProject_AKP/")
 
 #packages
@@ -34,35 +35,6 @@ metadata$BMI <- as.numeric(metadata$BMI)
 sampdat=sample_data(metadata)
 sample_names(sampdat)=metadata$SampleID
 
-#get some summary stats about metadata
-#interested in how age and BMI is distributed throughout Manners of Death (MoD) and Causes of Death (CoD)
-metadata %>% group_by(Sample_Area) %>% summarize_all(funs(length))
-metadata %>% group_by(MoD) %>% summarize_at(c('Age'), funs(mean,median,sd))
-metadata %>% group_by(CoD_Simple) %>% summarize_at(c('Age'), funs(mean,median,sd))
-metadata %>% group_by(CoD_Simple2) %>% summarize_at(c('Age'), funs(mean,median,sd))
-metadata %>% group_by(MoD) %>% summarize_at(c('BMI'), funs(mean,median,sd))
-metadata %>% group_by(CoD_Simple) %>% summarize_at(c('BMI'), funs(mean,median,sd))
-metadata %>% group_by(CoD_Simple2) %>% summarize_at(c('BMI'), funs(mean,median,sd))
-
-#regress BMI and Age to see if there are differences
-m1 <- lm(formula = as.numeric(BMI) ~ MoD, data = metadata)
-summary(m1)
-m1
-
-m2 <- lm(formula = as.numeric(BMI) ~ CoD_Simple2, data = metadata)
-summary(m2)
-m2
-
-
-m3 <- lm(formula = as.numeric(Age) ~ MoD, data = metadata)
-summary(m3)
-m3
-
-m4 <- lm(formula = as.numeric(Age) ~ CoD_Simple2, data = metadata)
-summary(m4)
-m4
-
-
 #put otu table in phyloseq format
 rownames(otu) <- otu$OTUID
 otu <- otu[,-1]
@@ -86,7 +58,57 @@ physeq <- merge_phyloseq(physeq_otu.tree, TAX)
 
 #triming out taxa that are not representative of .01% of mean sequence number
 physeq_trim <- prune_taxa(taxa_sums(physeq) > sum(otu) *.001 / 878, physeq)
-  #8692 taxa
+#8692 taxa
+
+# generate alpha-rarefaction curve
+#alpha rarefaction plot
+
+df <- read.csv('alpha-rare-akp.csv')
+
+#take first column and make it the rownames
+rownames(df) <- df[,1]
+#remove first column
+df_new <- df[,-1]
+#take out extra metadata
+df_new <- df_new[,-c(101:113)]
+
+#transpose dataframe
+df_t <- t(df_new)
+df_t <- as.data.frame(df_t)
+
+#adding the sequencing depth as a column
+df_t$depth <- rownames(df_t)
+
+#make data tidy
+boxplot <- df_t %>% 
+  gather(key = "SampleID", value = "shannon_div")
+#remove depth as samples
+boxplot <- boxplot %>%  filter(SampleID != 'depth')
+
+#re-add depth column from colnames of old dataframe
+depth <- colnames(df_new)
+depth <- c(rep(depth, 880))
+boxplot$depth <- depth
+#remove iteration from name
+boxplot$depth = substr(boxplot$depth,1,nchar(boxplot$depth)-7)
+boxplot$depth <- gsub( "_", "", as.character(boxplot$depth))
+
+#not going to use all levels, just showing plateo 
+boxplot$depth <- factor(boxplot$depth, levels= c('depth.1', 'depth.5556', 'depth.11111', 'depth.16667', 'depth.22222'))
+boxplot <- boxplot[complete.cases(boxplot),]
+
+boxplot$shannon_div <- as.numeric(boxplot$shannon_div)
+
+#making figure
+theme_set(theme_classic(base_size = 18))
+tiff("alpha-rarefaction.TIF", width = 4000, height = 3000, res=300)
+ggplot(boxplot, aes(x = depth, y = shannon_div)) + geom_boxplot(fill = "#F1AC37") + 
+  xlab('Sequencing Depth') +
+  ylab('Shannon Diversity') + 
+  stat_summary(fun.y=mean, geom="line", aes(group=1))
+dev.off()
+
+# Methods comparison ------------------------------------------------------
 
 
 # How does methods/normalization affect beta dispersion?
@@ -94,14 +116,14 @@ physeq_trim <- prune_taxa(taxa_sums(physeq) > sum(otu) *.001 / 878, physeq)
 #rarefy
 #minimum library sizes: 3,000, 5,000, 7,000
 physeq_3000 <- rarefy_even_depth(physeq_trim, sample.size = 3000)
-  #removed 16 samples, 90 OTUs
-  #8621 taxa, 862 samples
+#removed 16 samples, 90 OTUs
+#8621 taxa, 862 samples
 physeq_5000 <- rarefy_even_depth(physeq_trim, sample.size = 5000)
-  #removed 25 samples, 33 OTUs
-  #8664 taxa, 853 samples
+#removed 25 samples, 33 OTUs
+#8664 taxa, 853 samples
 physeq_7000 <- rarefy_even_depth(physeq_trim, sample.size = 7000)
-  #remove 45 samples, 83 OTUs
-  #8611 taxa, 833 samples
+#remove 45 samples, 83 OTUs
+#8611 taxa, 833 samples
 
 #normalize
 # removing taxa not present in at least a certain percentage of samples
@@ -115,52 +137,12 @@ normalize_wout_rarefying <- function(physeq, level) {
 }
 
 physeq_1per <- normalize_wout_rarefying(physeq, .01)
-  #1500 taxa, 878 samples
+#1500 taxa, 878 samples
 physeq_3per <- normalize_wout_rarefying(physeq, .03)
-  #643 taxa, 878 samples
+#643 taxa, 878 samples
 physeq_10per <- normalize_wout_rarefying(physeq, .1)
-  #216 taxa, 878 samples
+#216 taxa, 878 samples
 
-#find average library sizes for normalized physeq objs. 
-physeq_1per_otu <- as.data.frame(otu_table(physeq_1per))
-physeq_3per_otu <- as.data.frame(otu_table(physeq_3per))
-physeq_10per_otu <- as.data.frame(otu_table(physeq_10per))
-
-physeq_1per_sums <- c()
-for(i in 1:length(colnames(physeq_1per_otu))) {
- a <- sum(physeq_1per_otu[,i])
- physeq_1per_sums <- c(a, physeq_1per_sums)
-}
-
-mean(physeq_1per_sums)
-sd(physeq_1per_sums)
-median(physeq_1per_sums)
-min(physeq_1per_sums)
-max(physeq_1per_sums)
-
-physeq_3per_sums <- c()
-for(i in 1:length(colnames(physeq_3per_otu))) {
-  a <- sum(physeq_3per_otu[,i])
-  physeq_3per_sums <- c(a, physeq_3per_sums)
-}
-
-mean(physeq_3per_sums)
-sd(physeq_3per_sums)
-median(physeq_3per_sums)
-min(physeq_3per_sums)
-max(physeq_3per_sums)
-
-physeq_10per_sums <- c()
-for(i in 1:length(colnames(physeq_10per_otu))) {
-  a <- sum(physeq_10per_otu[,i])
-  physeq_10per_sums <- c(a, physeq_10per_sums)
-}
-
-mean(physeq_10per_sums)
-sd(physeq_10per_sums)
-median(physeq_10per_sums)
-min(physeq_10per_sums)
-max(physeq_10per_sums)
 
 # normalization method comparison
 #   rarefaction
@@ -184,50 +166,6 @@ sample_data(phy_list[[3]])$Method <- 'Rare_7000'
 sample_data(phy_list[[4]])$Method <- 'Norm_1per'
 sample_data(phy_list[[5]])$Method <- 'Norm_3per'
 sample_data(phy_list[[6]])$Method <- 'Norm_10per'
-
-#check if diversity is being lost among samples
-alph_richnes <- vector('list')
-for(i in 1:length(phy_list)) {
-  erich <- estimate_richness(phy_list[[i]], measures = c('Chao1', "Shannon"))
-  erich <- add_rownames(erich, "SampleID")
-  erich_sums <- merge(erich, metadata)
-  alph_richnes[[i]] <- erich_sums
-}
-alph_richnes[[1]]$Method <- 'Rare_3000'
-alph_richnes[[2]]$Method <- 'Rare_5000'
-alph_richnes[[3]]$Method <- 'Rare_7000'
-alph_richnes[[4]]$Method <- 'Norm_1'
-alph_richnes[[5]]$Method <- 'Norm_3'
-alph_richnes[[6]]$Method <- 'Norm_10'
-
-df_Alph <- ldply (alph_richnes, data.frame)
-
-df_Alph %>% group_by(Method) %>% summarise_at(c('Chao1', "Shannon"), funs(mean, sd))
-df_Alph$Method <- as.factor(df_Alph$Method)
-
-print(kruskal.test(Chao1 ~ Method, data = df_Alph))
-out <- posthoc.kruskal.nemenyi.test(x=df_Alph$Chao1, g=df_Alph$Method, dist='Tukey', p.adjust.method = 'bonf' )
-print(out$p.value)
-
-print(kruskal.test(Shannon ~ Method, data = df_Alph))
-out <- posthoc.kruskal.nemenyi.test(x=df_Alph$Shannon, g=df_Alph$Method, dist='Tukey', p.adjust.method = 'bonf' )
-print(out$p.value)
-
-df_Alph$Method <- factor(df_Alph$Method, levels = c('Rare_3000', 'Rare_5000', 'Rare_7000', 
-                                                       'Norm_1', 'Norm_3', "Norm_10"))
-p <- ggplot(df_Alph, aes(x=Method, y=Chao1, fill = Method)) + 
-  geom_boxplot()
-p
-
-p2 <- ggplot(df_Alph, aes(x=Method, y=Shannon, fill = Method)) + 
-  geom_boxplot()
-p2
-
-theme_set(theme_classic(base_size = 18))
-tiff("alph_div.TIF", width = 3000, height = 3500, res=300)
-ggarrange(p,p2,
-          nrow = 2, ncol = 1)
-dev.off()
 
 #samp_area_list - has all sample areas as unique names
 #should be 5
@@ -337,17 +275,17 @@ for(k in 1:30) {
 }
 
 names(beta_disp_list_u_mod) <- c('betadisp_mod_3000_nos', 'betadisp_mod_3000_rec', 'betadisp_mod_3000_ear',
-                           'betadisp_mod_3000_mou', 'betadisp_mod_3000_eye',
-                           'betadisp_mod_5000_nos', 'betadisp_mod_5000_rec', 'betadisp_mod_5000_ear',
-                           'betadisp_mod_5000_mou', 'betadisp_mod_5000_eye',
-                           'betadisp_mod_7000_nos', 'betadisp_mod_7000_rec', 'betadisp_mod_7000_ear',
-                           'betadisp_mod_7000_mou', 'betadisp_mod_7000_eye',
-                           'betadisp_mod_1per_nos', 'betadisp_mod_1per_rec', 'betadisp_mod_1per_ear',
-                           'betadisp_mod_1per_mou', 'betadisp_mod_1per_eye',
-                           'betadisp_mod_3per_nos', 'betadisp_mod_3per_rec', 'betadisp_mod_3per_ear',
-                           'betadisp_mod_3per_mou', 'betadisp_mod_3per_eye',
-                           'betadisp_mod_10per_nos', 'betadisp_mod_10per_rec', 'betadisp_mod_10per_ear',
-                           'betadisp_mod_10per_mou', 'betadisp_mod_10per_eye')
+                                 'betadisp_mod_3000_mou', 'betadisp_mod_3000_eye',
+                                 'betadisp_mod_5000_nos', 'betadisp_mod_5000_rec', 'betadisp_mod_5000_ear',
+                                 'betadisp_mod_5000_mou', 'betadisp_mod_5000_eye',
+                                 'betadisp_mod_7000_nos', 'betadisp_mod_7000_rec', 'betadisp_mod_7000_ear',
+                                 'betadisp_mod_7000_mou', 'betadisp_mod_7000_eye',
+                                 'betadisp_mod_1per_nos', 'betadisp_mod_1per_rec', 'betadisp_mod_1per_ear',
+                                 'betadisp_mod_1per_mou', 'betadisp_mod_1per_eye',
+                                 'betadisp_mod_3per_nos', 'betadisp_mod_3per_rec', 'betadisp_mod_3per_ear',
+                                 'betadisp_mod_3per_mou', 'betadisp_mod_3per_eye',
+                                 'betadisp_mod_10per_nos', 'betadisp_mod_10per_rec', 'betadisp_mod_10per_ear',
+                                 'betadisp_mod_10per_mou', 'betadisp_mod_10per_eye')
 
 names(beta_disp_list_w_mod) <- c('betadisp_w_mod_3000_nos', 'betadisp_w_mod_3000_rec', 'betadisp_w_mod_3000_ear',
                                  'betadisp_w_mod_3000_mou', 'betadisp_w_mod_3000_eye',
@@ -421,56 +359,56 @@ for(i in 1:length(beta_disp_list_u_mod)) {
 }
 
 names(get_beta_formated_u_mod) <- c('betavalues_mod_3000_nos', 'betavalues_mod_3000_rec', 'betavalues_mod_3000_ear',
-                                 'betavalues_mod_3000_mou', 'betavalues_mod_3000_eye',
-                                 'betavalues_mod_5000_nos', 'betavalues_mod_5000_rec', 'betavalues_mod_5000_ear',
-                                 'betavalues_mod_5000_mou', 'betavalues_mod_5000_eye',
-                                 'betavalues_mod_7000_nos', 'betavalues_mod_7000_rec', 'betavalues_mod_7000_ear',
-                                 'betavalues_mod_7000_mou', 'betavalues_mod_7000_eye',
-                                 'betavalues_mod_1per_nos', 'betavalues_mod_1per_rec', 'betavalues_mod_1per_ear',
-                                 'betavalues_mod_1per_mou', 'betavalues_mod_1per_eye',
-                                 'betavalues_mod_3per_nos', 'betavalues_mod_3per_rec', 'betavalues_mod_3per_ear',
-                                 'betavalues_mod_3per_mou', 'betavalues_mod_3per_eye',
-                                 'betavalues_mod_10per_nos', 'betavalues_mod_10per_rec', 'betavalues_mod_10per_ear',
-                                 'betavalues_mod_10per_mou', 'betavalues_mod_10per_eye')
+                                    'betavalues_mod_3000_mou', 'betavalues_mod_3000_eye',
+                                    'betavalues_mod_5000_nos', 'betavalues_mod_5000_rec', 'betavalues_mod_5000_ear',
+                                    'betavalues_mod_5000_mou', 'betavalues_mod_5000_eye',
+                                    'betavalues_mod_7000_nos', 'betavalues_mod_7000_rec', 'betavalues_mod_7000_ear',
+                                    'betavalues_mod_7000_mou', 'betavalues_mod_7000_eye',
+                                    'betavalues_mod_1per_nos', 'betavalues_mod_1per_rec', 'betavalues_mod_1per_ear',
+                                    'betavalues_mod_1per_mou', 'betavalues_mod_1per_eye',
+                                    'betavalues_mod_3per_nos', 'betavalues_mod_3per_rec', 'betavalues_mod_3per_ear',
+                                    'betavalues_mod_3per_mou', 'betavalues_mod_3per_eye',
+                                    'betavalues_mod_10per_nos', 'betavalues_mod_10per_rec', 'betavalues_mod_10per_ear',
+                                    'betavalues_mod_10per_mou', 'betavalues_mod_10per_eye')
 
 names(get_beta_formated_w_mod) <- c('betavalues_w_mod_3000_nos', 'betavalues_w_mod_3000_rec', 'betavalues_w_mod_3000_ear',
-                                 'betavalues_w_mod_3000_mou', 'betavalues_w_mod_3000_eye',
-                                 'betavalues_w_mod_5000_nos', 'betavalues_w_mod_5000_rec', 'betavalues_w_mod_5000_ear',
-                                 'betavalues_w_mod_5000_mou', 'betavalues_w_mod_5000_eye',
-                                 'betavalues_w_mod_7000_nos', 'betavalues_w_mod_7000_rec', 'betavalues_w_mod_7000_ear',
-                                 'betavalues_w_mod_7000_mou', 'betavalues_w_mod_7000_eye',
-                                 'betavalues_w_mod_1per_nos', 'betavalues_w_mod_1per_rec', 'betavalues_w_mod_1per_ear',
-                                 'betavalues_w_mod_1per_mou', 'betavalues_w_mod_1per_eye',
-                                 'betavalues_w_mod_3per_nos', 'betavalues_w_mod_3per_rec', 'betavalues_w_mod_3per_ear',
-                                 'betavalues_w_mod_3per_mou', 'betavalues_w_mod_3per_eye',
-                                 'betavalues_w_mod_10per_nos', 'betavalues_w_mod_10per_rec', 'betavalues_w_mod_10per_ear',
-                                 'betavalues_w_mod_10per_mou', 'betavalues_w_mod_10per_eye')
+                                    'betavalues_w_mod_3000_mou', 'betavalues_w_mod_3000_eye',
+                                    'betavalues_w_mod_5000_nos', 'betavalues_w_mod_5000_rec', 'betavalues_w_mod_5000_ear',
+                                    'betavalues_w_mod_5000_mou', 'betavalues_w_mod_5000_eye',
+                                    'betavalues_w_mod_7000_nos', 'betavalues_w_mod_7000_rec', 'betavalues_w_mod_7000_ear',
+                                    'betavalues_w_mod_7000_mou', 'betavalues_w_mod_7000_eye',
+                                    'betavalues_w_mod_1per_nos', 'betavalues_w_mod_1per_rec', 'betavalues_w_mod_1per_ear',
+                                    'betavalues_w_mod_1per_mou', 'betavalues_w_mod_1per_eye',
+                                    'betavalues_w_mod_3per_nos', 'betavalues_w_mod_3per_rec', 'betavalues_w_mod_3per_ear',
+                                    'betavalues_w_mod_3per_mou', 'betavalues_w_mod_3per_eye',
+                                    'betavalues_w_mod_10per_nos', 'betavalues_w_mod_10per_rec', 'betavalues_w_mod_10per_ear',
+                                    'betavalues_w_mod_10per_mou', 'betavalues_w_mod_10per_eye')
 
 names(get_beta_formated_u_cod) <- c('betavalues_cod_3000_nos', 'betavalues_cod_3000_rec', 'betavalues_cod_3000_ear',
-                                 'betavalues_cod_3000_mou', 'betavalues_cod_3000_eye',
-                                 'betavalues_cod_5000_nos', 'betavalues_cod_5000_rec', 'betavalues_cod_5000_ear',
-                                 'betavalues_cod_5000_mou', 'betavalues_cod_5000_eye',
-                                 'betavalues_cod_7000_nos', 'betavalues_cod_7000_rec', 'betavalues_cod_7000_ear',
-                                 'betavalues_cod_7000_mou', 'betavalues_cod_7000_eye',
-                                 'betavalues_cod_1per_nos', 'betavalues_cod_1per_rec', 'betavalues_cod_1per_ear',
-                                 'betavalues_cod_1per_mou', 'betavalues_cod_1per_eye',
-                                 'betavalues_cod_3per_nos', 'betavalues_cod_3per_rec', 'betavalues_cod_3per_ear',
-                                 'betavalues_cod_3per_mou', 'betavalues_cod_3per_eye',
-                                 'betavalues_cod_10per_nos', 'betavalues_cod_10per_rec', 'betavalues_cod_10per_ear',
-                                 'betavalues_cod_10per_mou', 'betavalues_cod_10per_eye')
+                                    'betavalues_cod_3000_mou', 'betavalues_cod_3000_eye',
+                                    'betavalues_cod_5000_nos', 'betavalues_cod_5000_rec', 'betavalues_cod_5000_ear',
+                                    'betavalues_cod_5000_mou', 'betavalues_cod_5000_eye',
+                                    'betavalues_cod_7000_nos', 'betavalues_cod_7000_rec', 'betavalues_cod_7000_ear',
+                                    'betavalues_cod_7000_mou', 'betavalues_cod_7000_eye',
+                                    'betavalues_cod_1per_nos', 'betavalues_cod_1per_rec', 'betavalues_cod_1per_ear',
+                                    'betavalues_cod_1per_mou', 'betavalues_cod_1per_eye',
+                                    'betavalues_cod_3per_nos', 'betavalues_cod_3per_rec', 'betavalues_cod_3per_ear',
+                                    'betavalues_cod_3per_mou', 'betavalues_cod_3per_eye',
+                                    'betavalues_cod_10per_nos', 'betavalues_cod_10per_rec', 'betavalues_cod_10per_ear',
+                                    'betavalues_cod_10per_mou', 'betavalues_cod_10per_eye')
 
 names(get_beta_formated_w_cod) <- c('betavalues_w_cod_3000_nos', 'betavalues_w_cod_3000_rec', 'betavalues_w_cod_3000_ear',
-                                 'betavalues_w_cod_3000_mou', 'betavalues_w_cod_3000_eye',
-                                 'betavalues_w_cod_5000_nos', 'betavalues_w_cod_5000_rec', 'betavalues_w_cod_5000_ear',
-                                 'betavalues_w_cod_5000_mou', 'betavalues_w_cod_5000_eye',
-                                 'betavalues_w_cod_7000_nos', 'betavalues_w_cod_7000_rec', 'betavalues_w_cod_7000_ear',
-                                 'betavalues_w_cod_7000_mou', 'betavalues_w_cod_7000_eye',
-                                 'betavalues_w_cod_1per_nos', 'betavalues_w_cod_1per_rec', 'betavalues_w_cod_1per_ear',
-                                 'betavalues_w_cod_1per_mou', 'betavalues_w_cod_1per_eye',
-                                 'betavalues_w_cod_3per_nos', 'betavalues_w_cod_3per_rec', 'betavalues_w_cod_3per_ear',
-                                 'betavalues_w_cod_3per_mou', 'betavalues_w_cod_3per_eye',
-                                 'betavalues_w_cod_10per_nos', 'betavalues_w_cod_10per_rec', 'betavalues_w_cod_10per_ear',
-                                 'betavalues_w_cod_10per_mou', 'betavalues_w_cod_10per_eye')
+                                    'betavalues_w_cod_3000_mou', 'betavalues_w_cod_3000_eye',
+                                    'betavalues_w_cod_5000_nos', 'betavalues_w_cod_5000_rec', 'betavalues_w_cod_5000_ear',
+                                    'betavalues_w_cod_5000_mou', 'betavalues_w_cod_5000_eye',
+                                    'betavalues_w_cod_7000_nos', 'betavalues_w_cod_7000_rec', 'betavalues_w_cod_7000_ear',
+                                    'betavalues_w_cod_7000_mou', 'betavalues_w_cod_7000_eye',
+                                    'betavalues_w_cod_1per_nos', 'betavalues_w_cod_1per_rec', 'betavalues_w_cod_1per_ear',
+                                    'betavalues_w_cod_1per_mou', 'betavalues_w_cod_1per_eye',
+                                    'betavalues_w_cod_3per_nos', 'betavalues_w_cod_3per_rec', 'betavalues_w_cod_3per_ear',
+                                    'betavalues_w_cod_3per_mou', 'betavalues_w_cod_3per_eye',
+                                    'betavalues_w_cod_10per_nos', 'betavalues_w_cod_10per_rec', 'betavalues_w_cod_10per_ear',
+                                    'betavalues_w_cod_10per_mou', 'betavalues_w_cod_10per_eye')
 
 #run KW test for every single comparison
 #non-parametric means comparison test
@@ -525,14 +463,14 @@ comp_data_cod_un <- filter(comp_data_cod, Matrix == 'Unifrac')
 #KW test results 
 #each of the panels: a,b,c,d
 a <- ggplot(comp_data_mod_un, aes(comp_data_mod_un$Body_Site, comp_data_mod_un$Level, 
-                                fill= comp_data_mod_un$KW_pvalue_new)) + 
+                                  fill= comp_data_mod_un$KW_pvalue_new)) + 
   geom_tile() + ylab('Method (Normalization Cutoff/Minimum Library Size)') + xlab('') +
   scale_fill_manual(name = "P value", labels = c('Less than 0.05', 'Less than 0.1', 'Non-significant'),
-                      values = c('#F1AC37', '#35CECE', '#E6EFEF')) + ggtitle(label= 'Unifrac', subtitle = 'Manner of Death') +
+                    values = c('#F1AC37', '#35CECE', '#E6EFEF')) + ggtitle(label= 'Unifrac', subtitle = 'Manner of Death') +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) + theme(legend.position = "none")
 
 b <- ggplot(comp_data_mod_w, aes(comp_data_mod_w$Body_Site, comp_data_mod_w$Level, 
-                                  fill= comp_data_mod_w$KW_pvalue_new)) + 
+                                 fill= comp_data_mod_w$KW_pvalue_new)) + 
   geom_tile() + ylab('') + xlab('') +
   scale_fill_manual(name = "P value", labels = c('Less than 0.05', 'Less than 0.1', 'Non-significant'),
                     values = c('#F1AC37', '#35CECE', '#E6EFEF')) + ggtitle(label= 'Weighted Unifrac', subtitle = 'Manner of Death') +
@@ -546,7 +484,7 @@ c <- ggplot(comp_data_cod_un, aes(comp_data_cod_un$Body_Site, comp_data_cod_un$L
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) + theme(legend.position = "bottom")
 
 d <- ggplot(comp_data_cod_W, aes(comp_data_cod_W$Body_Site, comp_data_cod_W$Level, 
-                                  fill= comp_data_cod_W$KW_pvalue_new)) + 
+                                 fill= comp_data_cod_W$KW_pvalue_new)) + 
   geom_tile() + ylab('') + xlab('Body Site') +
   scale_fill_manual(name = "P value", labels = c('Less than 0.05', 'Less than 0.1', 'Non-significant'),
                     values = c('#F1AC37', '#35CECE', '#E6EFEF')) + ggtitle(label= 'Weighted Unifrac', subtitle = 'Cause of Death') +
@@ -599,57 +537,144 @@ ggarrange(a,b,c,d,
 dev.off()
 
 
-# pairwise comparisons ----------------------------------------------------
+# Alpha-diversity ---------------------------------------------------------
 
-#these ended up being significant comparisons, look at pairwise comparisons 
+#check if diversity is being lost among samples
+alph_richnes <- vector('list')
+for(i in 1:length(phy_list)) {
+  erich <- estimate_richness(phy_list[[i]], measures = c('Chao1', "Shannon"))
+  erich <- add_rownames(erich, "SampleID")
+  erich_sums <- merge(erich, metadata)
+  alph_richnes[[i]] <- erich_sums
+}
+alph_richnes[[1]]$Method <- 'Rare_3000'
+alph_richnes[[2]]$Method <- 'Rare_5000'
+alph_richnes[[3]]$Method <- 'Rare_7000'
+alph_richnes[[4]]$Method <- 'Norm_1'
+alph_richnes[[5]]$Method <- 'Norm_3'
+alph_richnes[[6]]$Method <- 'Norm_10'
 
-# unifrac
-#mod
-# 10% eyes, mouth, nose
-# 3% eyes, mouth
-# 1% eyes, mouth
-# 3,000 mouth, nose
-# 5,000 mouth, nose
-# 7,000 mouth, nose
+df_Alph <- ldply (alph_richnes, data.frame)
 
-#cod
-#10% eyes, rectum
-#3% eyes, rectum
-#1% eyes, rectum
-#3,000 eyes, nose, rectum
-#5,000 eyes, rectum
-#7,000 eyes, nose, rectum 
+df_Alph %>% group_by(Method) %>% summarise_at(c('Chao1', "Shannon"), funs(mean, sd))
+df_Alph$Method <- as.factor(df_Alph$Method)
 
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_3000_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_3000_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_3000_nos']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_3000_nos']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_5000_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_5000_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_5000_nos']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_5000_nos']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_7000_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_7000_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_7000_nos']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_7000_nos']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
+print(kruskal.test(Chao1 ~ Method, data = df_Alph))
+out <- posthoc.kruskal.nemenyi.test(x=df_Alph$Chao1, g=df_Alph$Method, dist='Tukey', p.adjust.method = 'bonf' )
+print(out$p.value)
 
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_cod[['betavalues_cod_1per_eye']]$distances, g = get_beta_formated_u_cod[['betavalues_cod_1per_eye']]$CoD_Simple2, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_1per_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_1per_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_3per_eye']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_3per_eye']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_3per_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_3per_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_10per_eye']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_10per_eye']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_10per_mou']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_10per_mou']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = get_beta_formated_u_mod[['betavalues_mod_10per_nos']]$distances, g = get_beta_formated_u_mod[['betavalues_mod_10per_nos']]$MoD, p.adjust.method = 'bonf', dist='Tukey')
+print(kruskal.test(Shannon ~ Method, data = df_Alph))
+out <- posthoc.kruskal.nemenyi.test(x=df_Alph$Shannon, g=df_Alph$Method, dist='Tukey', p.adjust.method = 'bonf' )
+print(out$p.value)
 
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_3000_rec$distances, g = betavalues_cod_3000_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_3000_eye$distances, g = betavalues_cod_3000_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_3000_nos$distances, g = betavalues_cod_3000_nos$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_5000_rec$distances, g = betavalues_cod_5000_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_5000_eye$distances, g = betavalues_cod_5000_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_7000_rec$distances, g = betavalues_cod_7000_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_7000_eye$distances, g = betavalues_cod_7000_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_7000_nos$distances, g = betavalues_cod_7000_nos$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
+df_Alph$Method <- factor(df_Alph$Method, levels = c('Rare_3000', 'Rare_5000', 'Rare_7000', 
+                                                    'Norm_1', 'Norm_3', "Norm_10"))
+p <- ggplot(df_Alph, aes(x=Method, y=Chao1, fill = Method)) + 
+  geom_boxplot()
+p
 
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_1per_eye$distances, g = betavalues_cod_1per_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_1per_rec$distances, g = betavalues_cod_1per_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_3per_eye$distances, g = betavalues_cod_3per_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_3per_rec$distances, g = betavalues_cod_3per_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_10per_eye$distances, g = betavalues_cod_10per_eye$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
-posthoc.kruskal.nemenyi.test(x = betavalues_cod_10per_rec$distances, g = betavalues_cod_10per_rec$CoD_Simple, p.adjust.method = 'bonf', dist='Tukey')
+p2 <- ggplot(df_Alph, aes(x=Method, y=Shannon, fill = Method)) + 
+  geom_boxplot()
+p2
+
+theme_set(theme_classic(base_size = 18))
+tiff("alph_div.TIF", width = 3000, height = 3500, res=300)
+ggarrange(p,p2,
+          nrow = 2, ncol = 1)
+dev.off()
+
+## Library Size Artifact
+
+physeq_1per_otu <- data.frame(otu_table(physeq_1per))
+physeq_3per_otu <- data.frame(otu_table(physeq_3per))
+physeq_10per_otu <- data.frame(otu_table(physeq_10per))
+
+physeq_1per_totu <- data.frame(t(physeq_1per_otu))
+physeq_1per_totu$Sums <- rowSums(physeq_1per_totu)
+physeq_1per_totu$SampleID <- rownames(physeq_1per_totu)
+p1per_totu <- merge(metadata, physeq_1per_totu, by = 'SampleID')
+
+shapiro.test(p1per_totu$Sums)
+
+p1per_totu_mou <- p1per_totu %>% filter(Sample_Area == 'Mouth')
+p1per_totu_nos <- p1per_totu %>% filter(Sample_Area == 'Nose')
+
+kruskal.test(Sums ~ MoD, data = p1per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p1per_totu_mou$Sums, 
+                             g = p1per_totu_mou$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ MoD, data = p1per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p1per_totu_nos$Sums, 
+                             g = p1per_totu_nos$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p1per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p1per_totu_mou$Sums, 
+                             g = p1per_totu_mou$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p1per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p1per_totu_nos$Sums, 
+                             g = p1per_totu_nos$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+physeq_3per_totu <- data.frame(t(physeq_3per_otu))
+physeq_3per_totu$Sums <- rowSums(physeq_3per_totu)
+physeq_3per_totu$SampleID <- rownames(physeq_3per_totu)
+p3per_totu <- merge(metadata, physeq_3per_totu, by = 'SampleID')
+
+p3per_totu_mou <- p3per_totu %>% filter(Sample_Area == 'Mouth')
+p3per_totu_nos <- p3per_totu %>% filter(Sample_Area == 'Nose')
+
+kruskal.test(Sums ~ MoD, data = p3per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p3per_totu_mou$Sums, 
+                             g = p3per_totu_mou$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ MoD, data = p3per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p3per_totu_nos$Sums, 
+                             g = p3per_totu_nos$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p3per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p3per_totu_mou$Sums, 
+                             g = p3per_totu_mou$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p3per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p3per_totu_nos$Sums, 
+                             g = p3per_totu_nos$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+physeq_10per_totu <- data.frame(t(physeq_10per_otu))
+physeq_10per_totu$Sums <- rowSums(physeq_10per_totu)
+physeq_10per_totu$SampleID <- rownames(physeq_10per_totu)
+p10per_totu <- merge(metadata, physeq_10per_totu, by = 'SampleID')
+
+p10per_totu_mou <- p10per_totu %>% filter(Sample_Area == 'Mouth')
+p10per_totu_nos <- p10per_totu %>% filter(Sample_Area == 'Nose')
+
+kruskal.test(Sums ~ MoD, data = p10per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p10per_totu_mou$Sums, 
+                             g = p10per_totu_mou$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ MoD, data = p10per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p10per_totu_nos$Sums, 
+                             g = p10per_totu_nos$MoD, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p10per_totu_mou)
+posthoc.kruskal.nemenyi.test(x = p10per_totu_mou$Sums, 
+                             g = p10per_totu_mou$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
+
+kruskal.test(Sums ~ CoD_Simple2, data = p10per_totu_nos)
+posthoc.kruskal.nemenyi.test(x = p10per_totu_nos$Sums, 
+                             g = p10per_totu_nos$CoD_Simple2, p.adjust.method = 'bonf',
+                             dist='Tukey')
 
 
 
+save.image("C:/Users/sierr/Documents/ThesisProject_AKP/R Scripts/AKP_session.RData")
